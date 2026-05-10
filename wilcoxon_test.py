@@ -98,8 +98,8 @@ def main() -> int:
             )
         )
 
-    MD_PATH.write_text("\n".join(md_lines) + "\n")
-    JSON_PATH.write_text(json.dumps(rows, indent=2, default=str))
+    MD_PATH.write_text("\n".join(md_lines) + "\n", encoding="utf-8")
+    JSON_PATH.write_text(json.dumps(rows, indent=2, default=str), encoding="utf-8")
 
     # Pretty-print to stdout.
     for row in rows:

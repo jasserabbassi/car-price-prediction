@@ -394,9 +394,9 @@ def main() -> int:
 
     weights = ensemble.get_weights()
 
-    (MODELS_DIR / "per_fold_r2.json").write_text(json.dumps(per_fold, indent=2))
-    (MODELS_DIR / "all_metrics.json").write_text(json.dumps(metrics, indent=2))
-    (MODELS_DIR / "ensemble_weights.json").write_text(json.dumps(weights, indent=2))
+    (MODELS_DIR / "per_fold_r2.json").write_text(json.dumps(per_fold, indent=2), encoding="utf-8")
+    (MODELS_DIR / "all_metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
+    (MODELS_DIR / "ensemble_weights.json").write_text(json.dumps(weights, indent=2), encoding="utf-8")
 
     print("\nWrote per_fold_r2.json, all_metrics.json, ensemble_weights.json")
 

@@ -172,7 +172,7 @@ def update_config_file(best_params_by_model: Dict[str, dict]) -> None:
             text = new_text
             print(f"[update-config] rewrote {var_name}")
 
-    config_path.write_text(text)
+    config_path.write_text(text, encoding="utf-8")
     print(f"[update-config] saved {config_path}")
 
 
@@ -188,7 +188,7 @@ def main() -> int:
 
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
     out_path = MODELS_DIR / "best_hyperparameters.json"
-    out_path.write_text(json.dumps(results, indent=2, default=str))
+    out_path.write_text(json.dumps(results, indent=2, default=str), encoding="utf-8")
     print(f"\n[tune] saved {out_path}")
 
     if args.update_config:
