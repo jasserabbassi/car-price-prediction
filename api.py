@@ -46,6 +46,11 @@ from config import (
     SCALER_FILE,
 )
 
+# Importing train_model registers WeightedEnsemble on the running ``__main__``
+# (uvicorn here), so pickle.load can resolve ensembles serialised by older
+# train_model.py runs that ran as ``__main__`` themselves.
+from train_model import WeightedEnsemble  # noqa: F401
+
 # --------------------------------------------------------------------------- #
 # Model loading                                                                #
 # --------------------------------------------------------------------------- #

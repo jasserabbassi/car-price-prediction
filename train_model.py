@@ -130,6 +130,25 @@ class WeightedEnsemble:
         return dict(self.weights)
 
 
+# Force a stable module name for pickle even when train_model.py is run as the
+# script entry point (i.e. ``__name__ == "__main__"`` on Windows). Without this
+# every fresh pickle would be saved as ``__main__.WeightedEnsemble`` and would
+# fail to load anywhere else (pytest, FastAPI, Streamlit) where ``__main__`` is
+# the host process rather than train_model.
+WeightedEnsemble.__module__ = "train_model"
+
+# Backwards-compat shim: any pickle that *was* saved under
+# ``__main__.WeightedEnsemble`` (older runs on Windows) is still loadable from
+# any other entry point as long as train_model has been imported once. We add
+# the class to the currently-running ``__main__`` namespace so unpickling can
+# resolve it.
+import sys as _sys
+
+_main_module = _sys.modules.get("__main__")
+if _main_module is not None and not hasattr(_main_module, "WeightedEnsemble"):
+    _main_module.WeightedEnsemble = WeightedEnsemble
+
+
 # --------------------------------------------------------------------------- #
 # Helpers                                                                     #
 # --------------------------------------------------------------------------- #

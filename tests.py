@@ -55,6 +55,22 @@ MIN_R2 = 0.65
 MAX_ENSEMBLE_CV_STD = 0.05
 
 
+def _load_with_compat(f):
+    """pickle.load() that tolerates ensembles pickled when train_model was run
+    as ``__main__`` (Windows path), redirecting ``__main__.WeightedEnsemble``
+    to ``train_model.WeightedEnsemble``.
+    """
+
+    class _CompatUnpickler(pickle.Unpickler):
+        def find_class(self, module, name):
+            if name == "WeightedEnsemble":
+                from train_model import WeightedEnsemble
+                return WeightedEnsemble
+            return super().find_class(module, name)
+
+    return _CompatUnpickler(f).load()
+
+
 # --------------------------------------------------------------------------- #
 # Data loading & preprocessing                                                 #
 # --------------------------------------------------------------------------- #
@@ -196,7 +212,7 @@ class TestTrainedArtefacts(unittest.TestCase):
     def test_all_models_loadable(self) -> None:
         for path in self.REQUIRED_PATHS:
             with open(path, "rb") as f:
-                model = pickle.load(f)
+                model = _load_with_compat(f)
             self.assertIsNotNone(model)
 
     def test_metrics_json_present(self) -> None:
