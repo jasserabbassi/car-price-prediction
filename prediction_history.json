@@ -1,0 +1,314 @@
+[
+  {
+    "timestamp": "2026-03-31T18:48:15.587919",
+    "features": {
+      "Brand": "Toyota",
+      "Model": "Corolla",
+      "Year": 2020,
+      "Engine Size": 2.0,
+      "Mileage": 50000,
+      "Fuel Type": "Petrol",
+      "Transmission": "Manual",
+      "Condition": "New"
+    },
+    "predictions": {
+      "Random Forest": 48313.94763668652,
+      "XGBoost": 50129.6875,
+      "Gradient Boosting": 51652.807673973424
+    },
+    "models": [
+      "Random Forest",
+      "XGBoost",
+      "Gradient Boosting"
+    ],
+    "average_prediction": 50032.14760355331
+  },
+  {
+    "timestamp": "2026-03-31T18:48:22.647060",
+    "features": {
+      "Brand": "Toyota",
+      "Model": "Corolla",
+      "Year": 2020,
+      "Engine Size": 2.0,
+      "Mileage": 50000,
+      "Fuel Type": "Petrol",
+      "Transmission": "Manual",
+      "Condition": "Used"
+    },
+    "predictions": {
+      "Random Forest": 53637.69425513891,
+      "XGBoost": 57365.78125,
+      "Gradient Boosting": 52652.82933533927
+    },
+    "models": [
+      "Random Forest",
+      "XGBoost",
+      "Gradient Boosting"
+    ],
+    "average_prediction": 54552.10161349273
+  },
+  {
+    "timestamp": "2026-03-31T18:49:35.651346",
+    "features": {
+      "Brand": "Toyota",
+      "Model": "Corolla",
+      "Year": 2020,
+      "Engine Size": 2.0,
+      "Mileage": 50000,
+      "Fuel Type": "Petrol",
+      "Transmission": "Manual",
+      "Condition": "New"
+    },
+    "predictions": {
+      "Random Forest": 48313.94763668652,
+      "XGBoost": 50129.6875,
+      "Gradient Boosting": 51652.807673973424
+    },
+    "models": [
+      "Random Forest",
+      "XGBoost",
+      "Gradient Boosting"
+    ],
+    "average_prediction": 50032.14760355331
+  },
+  {
+    "timestamp": "2026-03-31T18:49:47.897333",
+    "features": {
+      "Brand": "Honda",
+      "Model": "Corolla",
+      "Year": 2020,
+      "Engine Size": 2.0,
+      "Mileage": 50000,
+      "Fuel Type": "Petrol",
+      "Transmission": "Manual",
+      "Condition": "New"
+    },
+    "predictions": {
+      "Random Forest": 48128.5777643398,
+      "XGBoost": 51854.4453125,
+      "Gradient Boosting": 51458.49433198883
+    },
+    "models": [
+      "Random Forest",
+      "XGBoost",
+      "Gradient Boosting"
+    ],
+    "average_prediction": 50480.50580294288
+  },
+  {
+    "timestamp": "2026-03-31T18:49:49.819514",
+    "features": {
+      "Brand": "Honda",
+      "Model": "Corolla",
+      "Year": 2020,
+      "Engine Size": 2.0,
+      "Mileage": 50000,
+      "Fuel Type": "Petrol",
+      "Transmission": "Manual",
+      "Condition": "Used"
+    },
+    "predictions": {
+      "Random Forest": 52740.65241512985,
+      "XGBoost": 55735.55859375,
+      "Gradient Boosting": 52458.51599335468
+    },
+    "models": [
+      "Random Forest",
+      "XGBoost",
+      "Gradient Boosting"
+    ],
+    "average_prediction": 53644.90900074485
+  },
+  {
+    "timestamp": "2026-03-31T18:49:53.277583",
+    "features": {
+      "Brand": "Honda",
+      "Model": "Corolla",
+      "Year": 2020,
+      "Engine Size": 2.0,
+      "Mileage": 50000,
+      "Fuel Type": "Petrol",
+      "Transmission": "Manual",
+      "Condition": "Like New"
+    },
+    "predictions": {
+      "Random Forest": 46800.18476683979,
+      "XGBoost": 45316.45703125,
+      "Gradient Boosting": 49926.252405607665
+    },
+    "models": [
+      "Random Forest",
+      "XGBoost",
+      "Gradient Boosting"
+    ],
+    "average_prediction": 47347.63140123248
+  },
+  {
+    "timestamp": "2026-03-31T18:50:25.579440",
+    "features": {
+      "Brand": "Audi",
+      "Model": "Corolla",
+      "Year": 2000,
+      "Engine Size": 2.0,
+      "Mileage": 50000,
+      "Fuel Type": "Petrol",
+      "Transmission": "Manual",
+      "Condition": "New"
+    },
+    "predictions": {
+      "Random Forest": 49262.136673719346,
+      "XGBoost": 38956.453125,
+      "Gradient Boosting": 42563.60782718417
+    },
+    "models": [
+      "Random Forest",
+      "XGBoost",
+      "Gradient Boosting"
+    ],
+    "average_prediction": 43594.065875301174
+  },
+  {
+    "timestamp": "2026-03-31T18:50:36.103536",
+    "features": {
+      "Brand": "Audi",
+      "Model": "Corolla",
+      "Year": 2000,
+      "Engine Size": 2.0,
+      "Mileage": 50000,
+      "Fuel Type": "Petrol",
+      "Transmission": "Manual",
+      "Condition": "Used"
+    },
+    "predictions": {
+      "Random Forest": 47747.645578750016,
+      "XGBoost": 44346.37890625,
+      "Gradient Boosting": 44240.118777652264
+    },
+    "models": [
+      "Random Forest",
+      "XGBoost",
+      "Gradient Boosting"
+    ],
+    "average_prediction": 45444.71442088409
+  },
+  {
+    "timestamp": "2026-03-31T18:50:39.010507",
+    "features": {
+      "Brand": "Audi",
+      "Model": "Corolla",
+      "Year": 2000,
+      "Engine Size": 2.0,
+      "Mileage": 50000,
+      "Fuel Type": "Petrol",
+      "Transmission": "Manual",
+      "Condition": "Like New"
+    },
+    "predictions": {
+      "Random Forest": 44043.31424766956,
+      "XGBoost": 31908.6015625,
+      "Gradient Boosting": 38434.844378777394
+    },
+    "models": [
+      "Random Forest",
+      "XGBoost",
+      "Gradient Boosting"
+    ],
+    "average_prediction": 38128.920062982324
+  },
+  {
+    "timestamp": "2026-03-31T18:50:42.680964",
+    "features": {
+      "Brand": "Audi",
+      "Model": "Corolla",
+      "Year": 2000,
+      "Engine Size": 2.0,
+      "Mileage": 50000,
+      "Fuel Type": "Petrol",
+      "Transmission": "Manual",
+      "Condition": "New"
+    },
+    "predictions": {
+      "Random Forest": 49262.136673719346,
+      "XGBoost": 38956.453125,
+      "Gradient Boosting": 42563.60782718417
+    },
+    "models": [
+      "Random Forest",
+      "XGBoost",
+      "Gradient Boosting"
+    ],
+    "average_prediction": 43594.065875301174
+  },
+  {
+    "timestamp": "2026-03-31T18:50:45.328404",
+    "features": {
+      "Brand": "Audi",
+      "Model": "Corolla",
+      "Year": 2000,
+      "Engine Size": 2.0,
+      "Mileage": 50000,
+      "Fuel Type": "Petrol",
+      "Transmission": "Manual",
+      "Condition": "Used"
+    },
+    "predictions": {
+      "Random Forest": 47747.64557875003,
+      "XGBoost": 44346.37890625,
+      "Gradient Boosting": 44240.118777652264
+    },
+    "models": [
+      "Random Forest",
+      "XGBoost",
+      "Gradient Boosting"
+    ],
+    "average_prediction": 45444.7144208841
+  },
+  {
+    "timestamp": "2026-03-31T18:50:47.129085",
+    "features": {
+      "Brand": "Audi",
+      "Model": "Corolla",
+      "Year": 2000,
+      "Engine Size": 2.0,
+      "Mileage": 50000,
+      "Fuel Type": "Petrol",
+      "Transmission": "Manual",
+      "Condition": "New"
+    },
+    "predictions": {
+      "Random Forest": 49262.136673719346,
+      "XGBoost": 38956.453125,
+      "Gradient Boosting": 42563.60782718417
+    },
+    "models": [
+      "Random Forest",
+      "XGBoost",
+      "Gradient Boosting"
+    ],
+    "average_prediction": 43594.065875301174
+  },
+  {
+    "timestamp": "2026-03-31T18:50:49.778138",
+    "features": {
+      "Brand": "Audi",
+      "Model": "Corolla",
+      "Year": 2000,
+      "Engine Size": 2.0,
+      "Mileage": 50000,
+      "Fuel Type": "Petrol",
+      "Transmission": "Manual",
+      "Condition": "Like New"
+    },
+    "predictions": {
+      "Random Forest": 44043.31424766956,
+      "XGBoost": 31908.6015625,
+      "Gradient Boosting": 38434.844378777394
+    },
+    "models": [
+      "Random Forest",
+      "XGBoost",
+      "Gradient Boosting"
+    ],
+    "average_prediction": 38128.920062982324
+  }
+]
