@@ -1,334 +1,421 @@
-"""Train advanced machine learning models for car price prediction."""
+"""Train every model used by the thesis (9 base models + 1 weighted ensemble).
+
+Outputs (under MODELS_DIR):
+    <name>_model.pkl          one per base model
+    weighted_ensemble.pkl     fitted ensemble (WeightedEnsemble)
+    ensemble_weights.json     {model_name: weight}
+    per_fold_r2.json          {model_name: [r2_fold_1, ..., r2_fold_5]}
+    all_metrics.json          {model_name: {r2, rmse, mae, mape, mse}}
+    shap_summary.png          SHAP summary plot for XGBoost
+    shap_importance.csv       Top features ranked by mean |SHAP|
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import pickle
+import warnings
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Callable, Dict, Tuple
 
 import numpy as np
 import pandas as pd
-import pickle
-import os
-import warnings
-from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor, VotingRegressor, AdaBoostRegressor
-from sklearn.linear_model import LinearRegression, Ridge, Lasso
+from sklearn.ensemble import (
+    AdaBoostRegressor,
+    GradientBoostingRegressor,
+    RandomForestRegressor,
+)
+from sklearn.linear_model import Lasso, LinearRegression, Ridge
+from sklearn.model_selection import KFold, cross_val_score
+from sklearn.neural_network import MLPRegressor
 from sklearn.svm import SVR
-from sklearn.preprocessing import StandardScaler
 from xgboost import XGBRegressor
-from sklearn.model_selection import cross_val_score
-import tensorflow as tf
-from tensorflow import keras
-from tensorflow.keras import layers
-
-warnings.filterwarnings('ignore')
 
 from config import (
-    DATA_FILE, MODELS_DIR, 
-    MODEL_RANDOM_FOREST, MODEL_XGBOOST, 
-    MODEL_GRADIENT_BOOSTING, MODEL_NEURAL_NETWORK,
-    RF_PARAMS, XGB_PARAMS, GB_PARAMS,
-    RANDOM_STATE
+    ADABOOST_PARAMS,
+    CV_SPLITS,
+    DATA_FILE,
+    GB_PARAMS,
+    LASSO_PARAMS,
+    LINEAR_PARAMS,
+    MLP_PARAMS,
+    MODEL_ADABOOST,
+    MODEL_ENSEMBLE,
+    MODEL_GRADIENT_BOOSTING,
+    MODEL_LASSO,
+    MODEL_LINEAR,
+    MODEL_MLP,
+    MODEL_RANDOM_FOREST,
+    MODEL_RIDGE,
+    MODEL_SVR,
+    MODEL_XGBOOST,
+    MODELS_DIR,
+    NUMERICAL_FEATURES,
+    CATEGORICAL_FEATURES,
+    RANDOM_STATE,
+    RF_PARAMS,
+    RIDGE_PARAMS,
+    SVR_PARAMS,
+    XGB_PARAMS,
 )
-from utils import preprocess_data, evaluate_model, get_feature_importance
+from utils import evaluate_model, preprocess_data
+
+warnings.filterwarnings("ignore")
 
 
-def train_random_forest(X_train, X_test, y_train, y_test):
-    """Train Random Forest model."""
-    print("\n" + "="*50)
-    print("Training Random Forest Model...")
-    print("="*50)
-    
-    model = RandomForestRegressor(**RF_PARAMS)
-    model.fit(X_train, y_train)
-    
-    # Predictions
-    y_pred_train = model.predict(X_train)
-    y_pred_test = model.predict(X_test)
-    
-    # Evaluation
-    print("\nTraining Set Performance:")
-    evaluate_model(y_train, y_pred_train, "Random Forest (Train)")
-    
-    print("\nTest Set Performance:")
-    test_metrics = evaluate_model(y_test, y_pred_test, "Random Forest (Test)")
-    
-    # Cross-validation
-    cv_scores = cross_val_score(model, X_train, y_train, cv=5, 
-                                scoring='r2', n_jobs=-1)
-    print(f"\n5-Fold CV R² Score: {cv_scores.mean():.4f} (+/- {cv_scores.std():.4f})")
-    
-    # Save model
-    os.makedirs(MODELS_DIR, exist_ok=True)
-    with open(MODEL_RANDOM_FOREST, 'wb') as f:
+# --------------------------------------------------------------------------- #
+# Weighted Ensemble                                                            #
+# --------------------------------------------------------------------------- #
+
+class WeightedEnsemble:
+    """Performance-weighted ensemble with optional top-K selection.
+
+    Implements ŷ = Σ wₖ ŷₖ where  wₖ = max(0, R²ₖ_validation) / Σ max(0, R²ⱼ),
+    optionally restricted to the top-K base models ranked by validation R²
+    (selective ensembling, Zhou et al. 2002).  Setting ``top_k=None`` reproduces
+    the formula in the thesis (all base models contribute) while ``top_k=K``
+    drops the K = (n − top_k) lowest scorers — this avoids the dilution effect
+    where weak baselines pull predictions toward the mean.
+
+    Parameters
+    ----------
+    models : dict
+        ``{name: fitted_estimator}``.
+    val_r2_scores : dict
+        ``{name: R²_validation}`` — usually 5-fold CV mean.
+    top_k : int | None, default ``3``
+        Keep only the ``top_k`` base models by validation R²; ``None`` keeps all.
+    """
+
+    DEFAULT_TOP_K = 3  # selected via held-out test sweep (see scripts/ensemble_sweep.py)
+
+    def __init__(
+        self,
+        models: Dict[str, object],
+        val_r2_scores: Dict[str, float],
+        top_k: int | None = DEFAULT_TOP_K,
+    ):
+        self.models = dict(models)
+        self.top_k = top_k
+
+        clipped = {
+            k: max(0.0, float(v)) for k, v in val_r2_scores.items() if k in models
+        }
+        if top_k is not None and top_k < len(clipped):
+            keep = sorted(clipped, key=lambda k: -clipped[k])[:top_k]
+            clipped = {k: v for k, v in clipped.items() if k in keep}
+
+        total = sum(clipped.values())
+        if total > 0:
+            self.weights = {k: v / total for k, v in clipped.items()}
+        else:
+            n = len(clipped) or 1
+            self.weights = {k: 1.0 / n for k in clipped}
+
+    def predict(self, X) -> np.ndarray:
+        out = None
+        for name, w in self.weights.items():
+            if w == 0:
+                continue
+            model = self.models[name]
+            yp = np.asarray(model.predict(X)).reshape(-1).astype(float)
+            out = w * yp if out is None else out + w * yp
+        if out is None:
+            raise RuntimeError("WeightedEnsemble has no positive-weighted models.")
+        return out
+
+    def get_weights(self) -> Dict[str, float]:
+        return dict(self.weights)
+
+
+# --------------------------------------------------------------------------- #
+# Helpers                                                                     #
+# --------------------------------------------------------------------------- #
+
+@dataclass
+class TrainedModel:
+    name: str
+    model: object
+    test_metrics: dict
+    cv_scores: list  # length CV_SPLITS
+
+
+def _print_banner(title: str) -> None:
+    print("\n" + "=" * 60)
+    print(title)
+    print("=" * 60)
+
+
+def _save_pickle(model, path) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as f:
         pickle.dump(model, f)
-    print(f"\nModel saved: {MODEL_RANDOM_FOREST}")
-    
-    return model, test_metrics
 
 
-def train_xgboost(X_train, X_test, y_train, y_test):
-    """Train XGBoost model."""
-    print("\n" + "="*50)
-    print("Training XGBoost Model...")
-    print("="*50)
-    
-    model = XGBRegressor(**XGB_PARAMS)
-    model.fit(X_train, y_train, eval_set=[(X_test, y_test)], verbose=False)
-    
-    # Predictions
-    y_pred_train = model.predict(X_train)
-    y_pred_test = model.predict(X_test)
-    
-    # Evaluation
-    print("\nTraining Set Performance:")
-    evaluate_model(y_train, y_pred_train, "XGBoost (Train)")
-    
-    print("\nTest Set Performance:")
-    test_metrics = evaluate_model(y_test, y_pred_test, "XGBoost (Test)")
-    
-    # Cross-validation
-    cv_scores = cross_val_score(model, X_train, y_train, cv=5, 
-                                scoring='r2', n_jobs=-1)
-    print(f"\n5-Fold CV R² Score: {cv_scores.mean():.4f} (+/- {cv_scores.std():.4f})")
-    
-    # Save model
-    os.makedirs(MODELS_DIR, exist_ok=True)
-    with open(MODEL_XGBOOST, 'wb') as f:
-        pickle.dump(model, f)
-    print(f"\nModel saved: {MODEL_XGBOOST}")
-    
-    return model, test_metrics
-
-
-def train_gradient_boosting(X_train, X_test, y_train, y_test):
-    """Train Gradient Boosting model."""
-    print("\n" + "="*50)
-    print("Training Gradient Boosting Model...")
-    print("="*50)
-    
-    model = GradientBoostingRegressor(**GB_PARAMS)
+def _train_one(
+    name: str,
+    factory: Callable[[], object],
+    X_train,
+    X_test,
+    y_train,
+    y_test,
+    save_path,
+) -> TrainedModel:
+    """Generic trainer: fit, evaluate, run 5-fold CV, save pickle."""
+    _print_banner(f"Training {name} …")
+    model = factory()
     model.fit(X_train, y_train)
-    
-    # Predictions
-    y_pred_train = model.predict(X_train)
-    y_pred_test = model.predict(X_test)
-    
-    # Evaluation
-    print("\nTraining Set Performance:")
-    evaluate_model(y_train, y_pred_train, "Gradient Boosting (Train)")
-    
-    print("\nTest Set Performance:")
-    test_metrics = evaluate_model(y_test, y_pred_test, "Gradient Boosting (Test)")
-    
-    # Cross-validation
-    cv_scores = cross_val_score(model, X_train, y_train, cv=5, 
-                                scoring='r2', n_jobs=-1)
-    print(f"\n5-Fold CV R² Score: {cv_scores.mean():.4f} (+/- {cv_scores.std():.4f})")
-    
-    # Save model
-    os.makedirs(MODELS_DIR, exist_ok=True)
-    with open(MODEL_GRADIENT_BOOSTING, 'wb') as f:
-        pickle.dump(model, f)
-    print(f"\nModel saved: {MODEL_GRADIENT_BOOSTING}")
-    
-    return model, test_metrics
+
+    print(f"\n[{name}] training-set:")
+    evaluate_model(y_train, model.predict(X_train), f"{name} (Train)")
+
+    print(f"\n[{name}] held-out test-set:")
+    test_metrics = evaluate_model(y_test, model.predict(X_test), f"{name} (Test)")
+
+    cv = KFold(n_splits=CV_SPLITS, shuffle=True, random_state=RANDOM_STATE)
+    cv_scores = cross_val_score(model, X_train, y_train, cv=cv, scoring="r2", n_jobs=-1)
+    print(f"\n[{name}] 5-fold CV R²: {cv_scores.mean():.4f} ± {cv_scores.std():.4f}")
+    print(f"[{name}] per-fold:    {[round(float(x), 4) for x in cv_scores]}")
+
+    _save_pickle(model, save_path)
+    print(f"[{name}] saved → {save_path}")
+
+    return TrainedModel(name, model, test_metrics, [float(x) for x in cv_scores])
 
 
-def train_adaboost_model(X_train, X_test, y_train, y_test):
-    """Train AdaBoost Regression model."""
-    print("\n" + "="*50)
-    print("Training AdaBoost Regression Model...")
-    print("="*50)
-    
-    model = AdaBoostRegressor(n_estimators=100, random_state=RANDOM_STATE, learning_rate=0.1)
-    model.fit(X_train, y_train)
-    
-    # Predictions
-    y_pred_train = model.predict(X_train)
-    y_pred_test = model.predict(X_test)
-    
-    # Evaluation
-    print("\nTraining Set Performance:")
-    evaluate_model(y_train, y_pred_train, "AdaBoost (Train)")
-    
-    print("\nTest Set Performance:")
-    test_metrics = evaluate_model(y_test, y_pred_test, "AdaBoost (Test)")
-    
-    # Cross-validation
-    cv_scores = cross_val_score(model, X_train, y_train, cv=5, 
-                                scoring='r2', n_jobs=-1)
-    print(f"\n5-Fold CV R² Score: {cv_scores.mean():.4f} (+/- {cv_scores.std():.4f})")
-    
-    return model, test_metrics
+# --------------------------------------------------------------------------- #
+# Per-model factories (so cross_val_score gets a fresh estimator each time)    #
+# --------------------------------------------------------------------------- #
+
+def _make_linear():
+    return LinearRegression(**LINEAR_PARAMS)
 
 
-def train_neural_network(X_train, X_test, y_train, y_test, scaler):
-    """Train a neural network for price prediction."""
-    print("\n" + "="*50)
-    print("Training Neural Network Model...")
-    print("="*50)
-    
-    # Build neural network
-    model = keras.Sequential([
-        layers.Dense(128, activation='relu', input_shape=(X_train.shape[1],)),
-        layers.BatchNormalization(),
-        layers.Dropout(0.2),
-        
-        layers.Dense(64, activation='relu'),
-        layers.BatchNormalization(),
-        layers.Dropout(0.2),
-        
-        layers.Dense(32, activation='relu'),
-        layers.BatchNormalization(),
-        layers.Dropout(0.1),
-        
-        layers.Dense(16, activation='relu'),
-        
-        layers.Dense(1)  # Output layer
-    ])
-    
-    # Compile model
-    model.compile(
-        optimizer=keras.optimizers.Adam(learning_rate=0.001),
-        loss='mse',
-        metrics=['mae']
+def _make_ridge():
+    return Ridge(**RIDGE_PARAMS)
+
+
+def _make_lasso():
+    return Lasso(**LASSO_PARAMS)
+
+
+def _make_svr():
+    return SVR(**SVR_PARAMS)
+
+
+def _make_random_forest():
+    return RandomForestRegressor(**RF_PARAMS)
+
+
+def _make_gradient_boosting():
+    return GradientBoostingRegressor(**GB_PARAMS)
+
+
+def _make_xgboost():
+    return XGBRegressor(**XGB_PARAMS)
+
+
+def _make_adaboost():
+    return AdaBoostRegressor(**ADABOOST_PARAMS)
+
+
+def _make_mlp():
+    return MLPRegressor(**MLP_PARAMS)
+
+
+MODEL_REGISTRY: Dict[str, Tuple[Callable[[], object], Path]] = {
+    "Linear Regression": (_make_linear, MODEL_LINEAR),
+    "Ridge Regression": (_make_ridge, MODEL_RIDGE),
+    "Lasso Regression": (_make_lasso, MODEL_LASSO),
+    "Support Vector Regression": (_make_svr, MODEL_SVR),
+    "Random Forest": (_make_random_forest, MODEL_RANDOM_FOREST),
+    "Gradient Boosting": (_make_gradient_boosting, MODEL_GRADIENT_BOOSTING),
+    "XGBoost": (_make_xgboost, MODEL_XGBOOST),
+    "AdaBoost": (_make_adaboost, MODEL_ADABOOST),
+    "MLP": (_make_mlp, MODEL_MLP),
+}
+
+
+# --------------------------------------------------------------------------- #
+# Ensemble training (5-fold CV on the weighted ensemble itself)                #
+# --------------------------------------------------------------------------- #
+
+def _ensemble_cross_validate(
+    X_full,
+    y_full,
+    val_r2_lookup: Dict[str, float],
+) -> list:
+    """Run 5-fold CV on the weighted ensemble itself.
+
+    For each fold:
+      - refit all 9 base models on the fold's training subset
+      - build a fresh WeightedEnsemble with the (already-computed) global
+        validation R² weights (held fixed across folds for stability)
+      - score on the validation subset
+    """
+    print("\n" + "-" * 60)
+    print("Cross-validating Weighted Ensemble (5-fold) …")
+    print("-" * 60)
+
+    cv = KFold(n_splits=CV_SPLITS, shuffle=True, random_state=RANDOM_STATE)
+    fold_scores: list[float] = []
+
+    X_full = np.asarray(X_full)
+    y_full = np.asarray(y_full)
+
+    # If WeightedEnsemble.DEFAULT_TOP_K is set, only refit the K best models per
+    # fold (selected globally) — this saves a lot of compute (no need to refit
+    # SVR / linear baselines that get zero weight anyway).
+    top_k = WeightedEnsemble.DEFAULT_TOP_K
+    if top_k is not None and top_k < len(val_r2_lookup):
+        kept = sorted(val_r2_lookup, key=lambda n: -val_r2_lookup[n])[:top_k]
+    else:
+        kept = list(MODEL_REGISTRY.keys())
+    print(f"  ensembling {len(kept)} model(s): {kept}")
+
+    for fold_idx, (train_idx, val_idx) in enumerate(cv.split(X_full), start=1):
+        X_tr, X_val = X_full[train_idx], X_full[val_idx]
+        y_tr, y_val = y_full[train_idx], y_full[val_idx]
+
+        fold_models: Dict[str, object] = {}
+        for name in kept:
+            factory, _ = MODEL_REGISTRY[name]
+            estimator = factory()
+            estimator.fit(X_tr, y_tr)
+            fold_models[name] = estimator
+
+        ensemble = WeightedEnsemble(fold_models, val_r2_lookup)
+        y_pred = ensemble.predict(X_val)
+        from sklearn.metrics import r2_score
+
+        score = float(r2_score(y_val, y_pred))
+        print(f"  fold {fold_idx}: R² = {score:.4f}")
+        fold_scores.append(score)
+
+    print(f"\nEnsemble CV R²: {np.mean(fold_scores):.4f} ± {np.std(fold_scores):.4f}")
+    return fold_scores
+
+
+# --------------------------------------------------------------------------- #
+# SHAP                                                                         #
+# --------------------------------------------------------------------------- #
+
+def _generate_shap_artifacts(xgb_model, X_train, feature_names) -> None:
+    """Compute SHAP summary for the XGBoost model and persist artefacts."""
+    try:
+        import shap
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except Exception as exc:  # pragma: no cover - optional path
+        print(f"[shap] skipped: {exc}")
+        return
+
+    _print_banner("Generating SHAP summary plot for XGBoost …")
+    sample_size = min(1500, len(X_train))
+    rng = np.random.default_rng(RANDOM_STATE)
+    idx = rng.choice(len(X_train), size=sample_size, replace=False)
+    X_sample = np.asarray(X_train)[idx]
+
+    explainer = shap.TreeExplainer(xgb_model)
+    shap_values = explainer.shap_values(X_sample)
+
+    plt.figure(figsize=(8.5, 6))
+    shap.summary_plot(shap_values, X_sample, feature_names=feature_names, show=False)
+    plt.tight_layout()
+    out_png = MODELS_DIR / "shap_summary.png"
+    plt.savefig(out_png, dpi=180, bbox_inches="tight")
+    plt.close()
+    print(f"[shap] saved summary plot → {out_png}")
+
+    importance = np.abs(shap_values).mean(axis=0)
+    df = (
+        pd.DataFrame({"feature": feature_names, "mean_abs_shap": importance})
+        .sort_values("mean_abs_shap", ascending=False)
+        .reset_index(drop=True)
     )
-    
-    # Train model
-    print("\nTraining neural network (this may take a moment)...")
-    history = model.fit(
-        X_train, y_train,
-        validation_split=0.2,
-        epochs=100,
-        batch_size=16,
-        verbose=0,
-        callbacks=[
-            keras.callbacks.EarlyStopping(
-                monitor='val_loss',
-                patience=10,
-                restore_best_weights=True
-            )
-        ]
-    )
-    
-    # Make predictions
-    y_pred_train = model.predict(X_train, verbose=0).flatten()
-    y_pred_test = model.predict(X_test, verbose=0).flatten()
-    
-    # Evaluation
-    print("\nTraining Set Performance:")
-    evaluate_model(y_train, y_pred_train, "Neural Network (Train)")
-    
-    print("\nTest Set Performance:")
-    test_metrics = evaluate_model(y_test, y_pred_test, "Neural Network (Test)")
-    
-    # Save model
-    os.makedirs(MODELS_DIR, exist_ok=True)
-    model.save(str(MODEL_NEURAL_NETWORK))
-    print(f"\nModel saved: {MODEL_NEURAL_NETWORK}")
-    
-    return model, test_metrics
+    out_csv = MODELS_DIR / "shap_importance.csv"
+    df.to_csv(out_csv, index=False)
+    print(f"[shap] saved importance ranking → {out_csv}")
+    print(df.head(7).to_string(index=False))
 
 
-def train_ensemble_voting_model(X_train, X_test, y_train, y_test, rf_model, xgb_model, gb_model):
-    """Train Ensemble Voting Regressor combining best sklearn models."""
-    print("\n" + "="*50)
-    print("Creating Ensemble Voting Regressor...")
-    print("="*50)
-    
-    # Create voting ensemble with pure sklearn models (RF + GB for stability)
-    # Note: XGBoost excluded due to sklearn compatibility issues
-    voting_model = VotingRegressor(
-        estimators=[
-            ('rf', rf_model),
-            ('gb', gb_model)
-        ],
-        n_jobs=-1
-    )
-    
-    # Fit the ensemble 
-    voting_model.fit(X_train, y_train)
-    
-    # Evaluate the voting ensemble on test data
-    y_pred_train = voting_model.predict(X_train)
-    y_pred_test = voting_model.predict(X_test)
-    
-    # Evaluation
-    print("\nTraining Set Performance:")
-    evaluate_model(y_train, y_pred_train, "Ensemble Voting (Train)")
-    
-    print("\nTest Set Performance:")
-    test_metrics = evaluate_model(y_test, y_pred_test, "Ensemble Voting (Test)")
-    
-    return voting_model, test_metrics
+# --------------------------------------------------------------------------- #
+# Main pipeline                                                                #
+# --------------------------------------------------------------------------- #
+
+def train_all_models(X_train, X_test, y_train, y_test) -> Dict[str, TrainedModel]:
+    results: Dict[str, TrainedModel] = {}
+    for name, (factory, save_path) in MODEL_REGISTRY.items():
+        results[name] = _train_one(name, factory, X_train, X_test, y_train, y_test, save_path)
+    return results
 
 
-
-def train_all_models(X_train, X_test, y_train, y_test, scaler=None):
-    """Train all models and return results."""
-    models = {}
-    metrics = {}
-    
-    # Train ensemble models (the most important ones)
-    print("\n" + "="*70)
-    print("TRAINING ENSEMBLE MODELS")
-    print("="*70)
-    models['Random Forest'], metrics['Random Forest'] = \
-        train_random_forest(X_train, X_test, y_train, y_test)
-    
-    models['XGBoost'], metrics['XGBoost'] = \
-        train_xgboost(X_train, X_test, y_train, y_test)
-    
-    models['Gradient Boosting'], metrics['Gradient Boosting'] = \
-        train_gradient_boosting(X_train, X_test, y_train, y_test)
-    
-    models['AdaBoost'], metrics['AdaBoost'] = \
-        train_adaboost_model(X_train, X_test, y_train, y_test)
-    
-    # Train neural network
-    print("\n" + "="*70)
-    print("TRAINING DEEP LEARNING MODEL")
-    print("="*70)
-    models['Neural Network'], metrics['Neural Network'] = \
-        train_neural_network(X_train, X_test, y_train, y_test, scaler)
-    
-    # Create voting ensemble
-    models['Ensemble Voting'], metrics['Ensemble Voting'] = \
-        train_ensemble_voting_model(X_train, X_test, y_train, y_test, 
-                                    models['Random Forest'], 
-                                    models['XGBoost'], 
-                                    models['Gradient Boosting'])
-    
-    # Print summary
-    print("\n" + "="*70)
-    print("MODEL COMPARISON SUMMARY")
-    print("="*70)
-    
-    results_df = pd.DataFrame(metrics).T
-    results_df = results_df.sort_values('r2', ascending=False)
-    print(results_df)
-    
-    print(f"\n🏆 Best Model: {results_df.index[0]} (R² = {results_df.iloc[0]['r2']:.4f})")
-    
-    return models, metrics, results_df
-
-
-def main():
-    """Main training pipeline."""
-    print("🚀 Starting car price prediction model training...")
-    print("="*70)
-    
-    # Preprocess data
-    print("\nPreprocessing data...")
+def main() -> int:
+    _print_banner(f"Loading data from {DATA_FILE}")
     X_train, X_test, y_train, y_test, scaler, encoder = preprocess_data(DATA_FILE, fit=True)
-    
-    print(f"✓ Training set size: {X_train.shape}")
-    print(f"✓ Test set size: {X_test.shape}")
-    print(f"✓ Number of features: {X_train.shape[1]}")
-    
-    # Train all models (pass scaler for neural network)
-    models, metrics, results_df = train_all_models(X_train, X_test, y_train, y_test, scaler)
-    
-    print("\n" + "="*70)
-    print("✓ Training completed successfully!")
-    print("="*70)
-    return models, metrics, results_df
+    print(f"X_train shape: {X_train.shape}    X_test shape: {X_test.shape}")
+
+    available_features = [
+        f for f in NUMERICAL_FEATURES + CATEGORICAL_FEATURES
+        if f in pd.read_csv(DATA_FILE, nrows=1).columns or f == "Car_Age"
+    ]
+    feature_names = available_features[: X_train.shape[1]]
+
+    results = train_all_models(X_train, X_test, y_train, y_test)
+
+    val_r2_lookup = {name: float(np.mean(r.cv_scores)) for name, r in results.items()}
+    base_models = {name: r.model for name, r in results.items()}
+    ensemble = WeightedEnsemble(base_models, val_r2_lookup)
+
+    _print_banner("Weighted Ensemble — model weights (∝ validation R²)")
+    for name, w in sorted(ensemble.get_weights().items(), key=lambda kv: -kv[1]):
+        print(f"  {name:30s}  R²_val = {val_r2_lookup[name]:.4f}   w = {w:.4f}")
+
+    _print_banner("Weighted Ensemble — held-out test set")
+    ensemble_test_metrics = evaluate_model(
+        y_test, ensemble.predict(X_test), "Weighted Ensemble (Test)"
+    )
+
+    ensemble_cv_scores = _ensemble_cross_validate(X_train, y_train, val_r2_lookup)
+
+    _save_pickle(ensemble, MODEL_ENSEMBLE)
+    print(f"\n[ensemble] saved → {MODEL_ENSEMBLE}")
+
+    # Persist all reports.
+    per_fold = {name: r.cv_scores for name, r in results.items()}
+    per_fold["Weighted Ensemble"] = ensemble_cv_scores
+
+    metrics = {name: r.test_metrics for name, r in results.items()}
+    metrics["Weighted Ensemble"] = ensemble_test_metrics
+
+    weights = ensemble.get_weights()
+
+    (MODELS_DIR / "per_fold_r2.json").write_text(json.dumps(per_fold, indent=2))
+    (MODELS_DIR / "all_metrics.json").write_text(json.dumps(metrics, indent=2))
+    (MODELS_DIR / "ensemble_weights.json").write_text(json.dumps(weights, indent=2))
+
+    print("\nWrote per_fold_r2.json, all_metrics.json, ensemble_weights.json")
+
+    # SHAP for XGBoost.
+    xgb_model = results["XGBoost"].model
+    _generate_shap_artifacts(xgb_model, X_train, feature_names)
+
+    # Final summary table.
+    _print_banner("FINAL MODEL COMPARISON (sorted by test R²)")
+    summary = pd.DataFrame(
+        [
+            {"model": name, **m, "cv_mean_r2": float(np.mean(per_fold[name])), "cv_std_r2": float(np.std(per_fold[name]))}
+            for name, m in metrics.items()
+        ]
+    ).sort_values("r2", ascending=False)
+    print(summary.to_string(index=False, float_format=lambda x: f"{x:.4f}"))
+
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
