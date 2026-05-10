@@ -330,6 +330,59 @@ def _safe_options(encoder, col: str, fallback: list[str]) -> list[str]:
     return fallback
 
 
+# Date-artefact model names produced by Excel mis-typing (e.g. "09-Mar"
+# was originally a model code like "09/03" parsed as a date).
+_DATE_MONTHS = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}
+
+
+def _is_date_artefact(value: str) -> bool:
+    parts = value.split("-")
+    if len(parts) != 2:
+        return False
+    a, b = parts[0].strip(), parts[1].strip()
+    return (a.isdigit() and b in _DATE_MONTHS) or (
+        b.isdigit() and a in _DATE_MONTHS
+    )
+
+
+_ALL_CAPS_BRANDS = {"BMW", "GMC", "GAZ", "UAZ", "VAZ"}
+
+
+def _pretty_brand(value: str) -> str:
+    """Display name for brands. Encoder still receives the raw value."""
+    s = str(value).strip()
+    if s == "სხვა":
+        return "Other"
+    if s in _ALL_CAPS_BRANDS:
+        return s
+    return s.title()
+
+
+def _pretty_model(value: str) -> str:
+    s = str(value).strip()
+    if _is_date_artefact(s):
+        return f"{s} (legacy code)"
+    return s
+
+
+def _sort_brands(values: list[str]) -> list[str]:
+    """Western/common brands first, Other / Georgian last, otherwise alpha."""
+    preferred = ["BMW", "TOYOTA", "HONDA", "MERCEDES-BENZ", "AUDI",
+                 "FORD", "NISSAN", "VOLKSWAGEN", "HYUNDAI", "CHEVROLET"]
+    head = [v for v in preferred if v in values]
+    tail = sorted(v for v in values if v not in head and v != "სხვა")
+    other = ["სხვა"] if "სხვა" in values else []
+    return head + tail + other
+
+
+def _filter_models(values: list[str]) -> list[str]:
+    """Hide the worst Excel date artefacts; keep them only at the very end."""
+    clean = [v for v in values if not _is_date_artefact(v)]
+    artefacts = [v for v in values if _is_date_artefact(v)]
+    return sorted(clean) + sorted(artefacts)
+
+
 def _persist_history(record: dict) -> None:
     HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
     history: list = []
@@ -500,33 +553,45 @@ def show_predictor_page(base_models, ensemble, scaler, encoder, weights: dict | 
         st.error("Models or preprocessors are missing. Run `python train_model.py` first.")
         return
 
-    brand_options = _safe_options(encoder, "Brand", DEFAULT_BRANDS)
+    brand_options = _sort_brands(_safe_options(encoder, "Brand", DEFAULT_BRANDS))
     fuel_options = _safe_options(encoder, "Fuel Type", ["Petrol", "Diesel", "Hybrid", "CNG", "LPG", "Electric"])
     transmission_options = _safe_options(encoder, "Transmission", ["Manual", "Automatic", "Tiptronic", "Variator"])
     condition_options = _safe_options(encoder, "Condition", ["Sedan", "Hatchback", "Coupe"])
-    model_options = _safe_options(encoder, "Model", ["Corolla"])
+    model_options = _filter_models(_safe_options(encoder, "Model", ["Corolla"]))
 
     with st.form("predictor_form", clear_on_submit=False):
         st.markdown("### Car details")
 
         c1, c2, c3 = st.columns(3)
         with c1:
-            brand = st.selectbox("Brand", brand_options, index=brand_options.index("BMW") if "BMW" in brand_options else 0)
+            brand = st.selectbox(
+                "Brand", brand_options,
+                index=brand_options.index("BMW") if "BMW" in brand_options else 0,
+                format_func=_pretty_brand,
+            )
             model_value = st.selectbox(
                 "Model", model_options[: min(len(model_options), 400)], index=0,
-                help="The full model catalogue from the encoder is available."
+                format_func=_pretty_model,
+                help="Some legacy model codes were stored as dates in the source spreadsheet — those are tagged 'legacy code' and pushed to the bottom.",
             )
             condition = st.selectbox(
                 "Body type", condition_options,
-                help="This is the vehicle's body shape (Sedan, Hatchback, …) — the original Kaggle column name was 'Condition'.",
+                index=condition_options.index("Sedan") if "Sedan" in condition_options else 0,
+                help="The vehicle's body shape (Sedan, Hatchback, …). The Kaggle column was named 'Condition'.",
             )
         with c2:
             year = st.slider("Year", 1990, CURRENT_YEAR, 2018)
             engine_size = st.number_input("Engine size (L)", 0.5, 8.0, 2.0, 0.1)
-            fuel_type = st.selectbox("Fuel type", fuel_options)
+            fuel_type = st.selectbox(
+                "Fuel type", fuel_options,
+                index=fuel_options.index("Petrol") if "Petrol" in fuel_options else 0,
+            )
         with c3:
             mileage = st.number_input("Mileage (mi)", 0, 500_000, 60_000, 1000)
-            transmission = st.selectbox("Transmission", transmission_options)
+            transmission = st.selectbox(
+                "Transmission", transmission_options,
+                index=transmission_options.index("Automatic") if "Automatic" in transmission_options else 0,
+            )
             st.markdown(" ")
             submitted = st.form_submit_button("Predict price", type="primary", use_container_width=True)
 
@@ -685,24 +750,26 @@ def show_compare_page(base_models, ensemble, scaler, encoder, weights: dict | No
         st.error("Models or preprocessors are missing. Run `python train_model.py` first.")
         return
 
-    brands = _safe_options(encoder, "Brand", DEFAULT_BRANDS)
+    brands = _sort_brands(_safe_options(encoder, "Brand", DEFAULT_BRANDS))
     fuels = _safe_options(encoder, "Fuel Type", ["Petrol", "Diesel", "Hybrid"])
     transmissions = _safe_options(encoder, "Transmission", ["Manual", "Automatic"])
     conditions = _safe_options(encoder, "Condition", ["Sedan", "Hatchback", "Coupe"])
-    models = _safe_options(encoder, "Model", ["Corolla"])
+    models = _filter_models(_safe_options(encoder, "Model", ["Corolla"]))
 
     def _car_form(side: str, defaults: dict) -> dict:
         st.markdown(f"### Car {side}")
         c1, c2 = st.columns(2)
         with c1:
             brand = st.selectbox(f"Brand ({side})", brands,
-                                 index=brands.index(defaults["Brand"]) if defaults["Brand"] in brands else 0)
+                                 index=brands.index(defaults["Brand"]) if defaults["Brand"] in brands else 0,
+                                 format_func=_pretty_brand)
             year = st.slider(f"Year ({side})", 1990, CURRENT_YEAR, defaults["Year"])
             engine = st.number_input(f"Engine (L) ({side})", 0.5, 8.0, defaults["Engine Size"], 0.1)
             fuel = st.selectbox(f"Fuel ({side})", fuels,
                                 index=fuels.index(defaults["Fuel Type"]) if defaults["Fuel Type"] in fuels else 0)
         with c2:
-            model_v = st.selectbox(f"Model ({side})", models[:400], index=0)
+            model_v = st.selectbox(f"Model ({side})", models[:400], index=0,
+                                   format_func=_pretty_model)
             mileage = st.number_input(f"Mileage (mi) ({side})", 0, 500_000, defaults["Mileage"], 1000)
             tx = st.selectbox(f"Transmission ({side})", transmissions,
                               index=transmissions.index(defaults["Transmission"]) if defaults["Transmission"] in transmissions else 0)
@@ -713,15 +780,20 @@ def show_compare_page(base_models, ensemble, scaler, encoder, weights: dict | No
             "Mileage": mileage, "Fuel Type": fuel, "Transmission": tx, "Condition": cond,
         }
 
+    petrol = "Petrol" if "Petrol" in fuels else fuels[0]
+    auto = "Automatic" if "Automatic" in transmissions else transmissions[0]
+    sedan = "Sedan" if "Sedan" in conditions else conditions[0]
+    bmw = "BMW" if "BMW" in brands else brands[0]
+    toyota = "TOYOTA" if "TOYOTA" in brands else (brands[1] if len(brands) > 1 else brands[0])
     col_a, col_b = st.columns(2)
     with col_a:
-        car_a = _car_form("A", {"Brand": brands[0], "Year": 2018, "Engine Size": 2.0,
-                                 "Fuel Type": fuels[0], "Mileage": 60000,
-                                 "Transmission": transmissions[0], "Condition": conditions[0]})
+        car_a = _car_form("A", {"Brand": bmw, "Year": 2018, "Engine Size": 2.0,
+                                 "Fuel Type": petrol, "Mileage": 60000,
+                                 "Transmission": auto, "Condition": sedan})
     with col_b:
-        car_b = _car_form("B", {"Brand": brands[-1], "Year": 2015, "Engine Size": 2.5,
-                                 "Fuel Type": fuels[0], "Mileage": 90000,
-                                 "Transmission": transmissions[0], "Condition": conditions[0]})
+        car_b = _car_form("B", {"Brand": toyota, "Year": 2015, "Engine Size": 1.8,
+                                 "Fuel Type": petrol, "Mileage": 90000,
+                                 "Transmission": auto, "Condition": sedan})
 
     if not st.button("Compare", type="primary", use_container_width=True):
         return
@@ -731,9 +803,9 @@ def show_compare_page(base_models, ensemble, scaler, encoder, weights: dict | No
 
     cols = st.columns(2)
     _kpi(cols[0], "Car A — Ensemble", f"${ea:,.0f}",
-         f"{car_a['Brand']} · {car_a['Year']} · {int(car_a['Mileage']):,} mi")
+         f"{_pretty_brand(car_a['Brand'])} · {car_a['Year']} · {int(car_a['Mileage']):,} mi")
     _kpi(cols[1], "Car B — Ensemble", f"${eb:,.0f}",
-         f"{car_b['Brand']} · {car_b['Year']} · {int(car_b['Mileage']):,} mi")
+         f"{_pretty_brand(car_b['Brand'])} · {car_b['Year']} · {int(car_b['Mileage']):,} mi")
 
     diff = ea - eb
     if abs(diff) < 1:
