@@ -1,0 +1,92 @@
+[
+  {
+    "Comparison": "Ensemble vs Linear Regression",
+    "Ensemble mean R\u00b2": 0.6886566721366403,
+    "Base mean R\u00b2": 0.25787087642666917,
+    "Mean \u0394": 0.430785795709971,
+    "W": 15.0,
+    "p-value (one-sided)": 0.03125,
+    "Significant @ \u03b1=0.05": true,
+    "Interpretation": "ensemble > base"
+  },
+  {
+    "Comparison": "Ensemble vs Ridge Regression",
+    "Ensemble mean R\u00b2": 0.6886566721366403,
+    "Base mean R\u00b2": 0.257928145023553,
+    "Mean \u0394": 0.4307285271130873,
+    "W": 15.0,
+    "p-value (one-sided)": 0.03125,
+    "Significant @ \u03b1=0.05": true,
+    "Interpretation": "ensemble > base"
+  },
+  {
+    "Comparison": "Ensemble vs Lasso Regression",
+    "Ensemble mean R\u00b2": 0.6886566721366403,
+    "Base mean R\u00b2": 0.2579280431761143,
+    "Mean \u0394": 0.43072862896052594,
+    "W": 15.0,
+    "p-value (one-sided)": 0.03125,
+    "Significant @ \u03b1=0.05": true,
+    "Interpretation": "ensemble > base"
+  },
+  {
+    "Comparison": "Ensemble vs Support Vector Regression",
+    "Ensemble mean R\u00b2": 0.6886566721366403,
+    "Base mean R\u00b2": 0.09755403928426146,
+    "Mean \u0394": 0.5911026328523787,
+    "W": 15.0,
+    "p-value (one-sided)": 0.03125,
+    "Significant @ \u03b1=0.05": true,
+    "Interpretation": "ensemble > base"
+  },
+  {
+    "Comparison": "Ensemble vs Random Forest",
+    "Ensemble mean R\u00b2": 0.6886566721366403,
+    "Base mean R\u00b2": 0.6978358333504351,
+    "Mean \u0394": -0.009179161213794917,
+    "W": 1.0,
+    "p-value (one-sided)": 0.96875,
+    "Significant @ \u03b1=0.05": false,
+    "Interpretation": "not significant"
+  },
+  {
+    "Comparison": "Ensemble vs Gradient Boosting",
+    "Ensemble mean R\u00b2": 0.6886566721366403,
+    "Base mean R\u00b2": 0.6384693632260483,
+    "Mean \u0394": 0.050187308910591935,
+    "W": 15.0,
+    "p-value (one-sided)": 0.03125,
+    "Significant @ \u03b1=0.05": true,
+    "Interpretation": "ensemble > base"
+  },
+  {
+    "Comparison": "Ensemble vs XGBoost",
+    "Ensemble mean R\u00b2": 0.6886566721366403,
+    "Base mean R\u00b2": 0.685146107667238,
+    "Mean \u0394": 0.0035105644694021,
+    "W": 12.0,
+    "p-value (one-sided)": 0.15625,
+    "Significant @ \u03b1=0.05": false,
+    "Interpretation": "not significant"
+  },
+  {
+    "Comparison": "Ensemble vs AdaBoost",
+    "Ensemble mean R\u00b2": 0.6886566721366403,
+    "Base mean R\u00b2": 0.3794862473574946,
+    "Mean \u0394": 0.3091704247791457,
+    "W": 15.0,
+    "p-value (one-sided)": 0.03125,
+    "Significant @ \u03b1=0.05": true,
+    "Interpretation": "ensemble > base"
+  },
+  {
+    "Comparison": "Ensemble vs MLP",
+    "Ensemble mean R\u00b2": 0.6886566721366403,
+    "Base mean R\u00b2": 0.557421085076359,
+    "Mean \u0394": 0.13123558706028118,
+    "W": 15.0,
+    "p-value (one-sided)": 0.03125,
+    "Significant @ \u03b1=0.05": true,
+    "Interpretation": "ensemble > base"
+  }
+]

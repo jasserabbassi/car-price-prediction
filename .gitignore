@@ -1,0 +1,65 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Jupyter
+.ipynb_checkpoints/
+.jupyter/
+
+# Trained-model artefacts.
+# Models are committed to the repo so the Streamlit Community Cloud deployment
+# can serve predictions without retraining on every cold start.
+# Re-running `python train_model.py` regenerates everything in models/.
+*.h5
+*.joblib
+
+# Pickles outside models/ are still ignored.
+/*.pkl
+**/data/*.pkl
+
+# Data caches (the canonical CSVs are downloaded by scripts/prepare_dataset.py)
+data/car_price_kaggle_raw.csv
+data/car_price_kaggle_smoke.csv
+
+# Runtime artefacts
+prediction_history.json
+prediction_results.csv
+prediction_results.json
+test_history*.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment variables
+.env
+.env.local
