@@ -845,70 +845,139 @@ def show_predictor_page(base_models, ensemble, scaler, encoder, weights: dict | 
         pass
 
 
-def show_compare_page(base_models, ensemble, scaler, encoder, weights: dict | None) -> None:
+def show_compare_page(base_models, ensemble, scaler, encoder, weights: dict | None,
+                      df: pd.DataFrame) -> None:
     st.markdown("## Compare two cars")
-    st.caption("Score two cars side by side and see which is the better buy.")
+    st.caption("Filter the dataset, pick two cars, and see which is the better buy.")
 
     if not base_models or scaler is None or encoder is None:
         st.error("Models or preprocessors are missing. Run `python train_model.py` first.")
         return
 
-    brands = _sort_brands(_safe_options(encoder, "Brand", DEFAULT_BRANDS))
-    fuels = _safe_options(encoder, "Fuel Type", ["Petrol", "Diesel", "Hybrid"])
-    transmissions = _safe_options(encoder, "Transmission", ["Manual", "Automatic"])
-    conditions = _safe_options(encoder, "Condition", ["Sedan", "Hatchback", "Coupe"])
-    models = _filter_models(_safe_options(encoder, "Model", ["Corolla"]))
+    # ----------------------------------------------------------------------- #
+    # Filter controls
+    # ----------------------------------------------------------------------- #
+    _section("Filter cars", "narrow down the dataset before comparing", "filter")
 
-    def _car_form(side: str, defaults: dict) -> dict:
-        st.markdown(f"### Car {side}")
-        c1, c2 = st.columns(2)
-        with c1:
-            brand = st.selectbox(f"Brand ({side})", brands,
-                                 index=brands.index(defaults["Brand"]) if defaults["Brand"] in brands else 0,
-                                 format_func=_pretty_brand)
-            year = st.slider(f"Year ({side})", 1990, CURRENT_YEAR, defaults["Year"])
-            engine = st.number_input(f"Engine (L) ({side})", 0.5, 8.0, defaults["Engine Size"], 0.1)
-            fuel = st.selectbox(f"Fuel ({side})", fuels,
-                                index=fuels.index(defaults["Fuel Type"]) if defaults["Fuel Type"] in fuels else 0)
-        with c2:
-            model_v = st.selectbox(f"Model ({side})", models[:400], index=0,
-                                   format_func=_pretty_model)
-            mileage = st.number_input(f"Mileage (mi) ({side})", 0, 500_000, defaults["Mileage"], 1000)
-            tx = st.selectbox(f"Transmission ({side})", transmissions,
-                              index=transmissions.index(defaults["Transmission"]) if defaults["Transmission"] in transmissions else 0)
-            cond = st.selectbox(f"Body type ({side})", conditions,
-                                index=conditions.index(defaults["Condition"]) if defaults["Condition"] in conditions else 0)
-        return {
-            "Brand": brand, "Model": model_v, "Year": year, "Engine Size": engine,
-            "Mileage": mileage, "Fuel Type": fuel, "Transmission": tx, "Condition": cond,
-        }
+    f1, f2, f3, f4 = st.columns(4)
+    with f1:
+        brands = _sort_brands(_safe_options(encoder, "Brand", DEFAULT_BRANDS))
+        brand_filter = st.multiselect("Brand", brands, default=brands[:4])
+    with f2:
+        fuels = _safe_options(encoder, "Fuel Type", ["Petrol", "Diesel", "Hybrid"])
+        fuel_filter = st.multiselect("Fuel type", fuels, default=fuels[:2])
+    with f3:
+        transmissions = _safe_options(encoder, "Transmission", ["Manual", "Automatic"])
+        tx_filter = st.multiselect("Transmission", transmissions, default=transmissions[:2])
+    with f4:
+        conditions = _safe_options(encoder, "Condition", ["Sedan", "Hatchback", "Coupe"])
+        cond_filter = st.multiselect("Body type", conditions, default=conditions[:2])
 
-    petrol = "Petrol" if "Petrol" in fuels else fuels[0]
-    auto = "Automatic" if "Automatic" in transmissions else transmissions[0]
-    sedan = "Sedan" if "Sedan" in conditions else conditions[0]
-    bmw = "BMW" if "BMW" in brands else brands[0]
-    toyota = "TOYOTA" if "TOYOTA" in brands else (brands[1] if len(brands) > 1 else brands[0])
-    col_a, col_b = st.columns(2)
-    with col_a:
-        car_a = _car_form("A", {"Brand": bmw, "Year": 2018, "Engine Size": 2.0,
-                                 "Fuel Type": petrol, "Mileage": 60000,
-                                 "Transmission": auto, "Condition": sedan})
-    with col_b:
-        car_b = _car_form("B", {"Brand": toyota, "Year": 2015, "Engine Size": 1.8,
-                                 "Fuel Type": petrol, "Mileage": 90000,
-                                 "Transmission": auto, "Condition": sedan})
+    r1, r2, r3 = st.columns(3)
+    with r1:
+        year_range = st.slider("Year range", 1990, CURRENT_YEAR,
+                               (2010, CURRENT_YEAR))
+    with r2:
+        mileage_range = st.slider("Mileage range (mi)", 0, 300_000,
+                                  (0, 200_000), 5000)
+    with r3:
+        price_range = st.slider("Price range ($)", 0, 100_000,
+                                (0, 60_000), 1000)
 
-    if not st.button("Compare", type="primary", use_container_width=True):
+    # Apply filters
+    mask = pd.Series(True, index=df.index)
+    if brand_filter:
+        mask &= df["Brand"].isin(brand_filter)
+    if fuel_filter:
+        mask &= df["Fuel Type"].isin(fuel_filter)
+    if tx_filter:
+        mask &= df["Transmission"].isin(tx_filter)
+    if cond_filter:
+        mask &= df["Condition"].isin(cond_filter)
+    mask &= df["Year"].between(year_range[0], year_range[1])
+    mask &= df["Mileage"].between(mileage_range[0], mileage_range[1])
+    mask &= df["Price"].between(price_range[0], price_range[1])
+
+    filtered = df[mask].copy()
+    st.markdown(f"<span class='pill'>{len(filtered):,} cars match filters</span>",
+                unsafe_allow_html=True)
+
+    if len(filtered) == 0:
+        st.warning("No cars match these filters. Broaden your selection.")
         return
 
-    pa, ea, _ = _predict_all(car_a, base_models, ensemble, scaler, encoder)
-    pb, eb, _ = _predict_all(car_b, base_models, ensemble, scaler, encoder)
+    # ----------------------------------------------------------------------- #
+    # Car selection
+    # ----------------------------------------------------------------------- #
+    _section("Pick two cars", f"from {len(filtered):,} matches")
+
+    # Sort filtered for display
+    filtered = filtered.sort_values(["Brand", "Year", "Price"]).reset_index(drop=True)
+    display_df = filtered[["Brand", "Model", "Year", "Mileage", "Engine Size",
+                           "Fuel Type", "Transmission", "Condition", "Price"]].copy()
+    display_df["Mileage"] = display_df["Mileage"].apply(lambda x: f"{int(x):,}")
+    display_df["Price"] = display_df["Price"].apply(lambda x: f"${x:,.0f}")
+
+    # Use index-based selection
+    idx_options = list(range(len(filtered)))
+    idx_labels = [
+        f"{filtered.iloc[i]['Brand']} {filtered.iloc[i]['Model']} "
+        f"({filtered.iloc[i]['Year']}) — {int(filtered.iloc[i]['Mileage']):,} mi — "
+        f"${filtered.iloc[i]['Price']:,.0f}"
+        for i in idx_options
+    ]
+
+    s1, s2 = st.columns(2)
+    with s1:
+        st.markdown("### Car A")
+        sel_a = st.selectbox("Select Car A", idx_options,
+                             format_func=lambda i: idx_labels[i], index=0)
+    with s2:
+        st.markdown("### Car B")
+        sel_b = st.selectbox("Select Car B", idx_options,
+                             format_func=lambda i: idx_labels[i],
+                             index=min(1, len(idx_options) - 1))
+
+    # Quick preview table
+    preview = filtered.iloc[[sel_a, sel_b]][
+        ["Brand", "Model", "Year", "Mileage", "Engine Size",
+         "Fuel Type", "Transmission", "Condition", "Price"]
+    ].copy()
+    preview.index = ["Car A", "Car B"]
+    preview["Mileage"] = preview["Mileage"].apply(lambda x: f"{int(x):,}")
+    preview["Price"] = preview["Price"].apply(lambda x: f"${x:,.0f}")
+    st.dataframe(preview, use_container_width=True)
+
+    if not st.button("Compare selected cars", type="primary", use_container_width=True):
+        return
+
+    # ----------------------------------------------------------------------- #
+    # Predict
+    # ----------------------------------------------------------------------- #
+    car_a = filtered.iloc[sel_a].to_dict()
+    car_b = filtered.iloc[sel_b].to_dict()
+
+    payload_a = {
+        "Brand": car_a["Brand"], "Model": car_a["Model"], "Year": int(car_a["Year"]),
+        "Engine Size": float(car_a["Engine Size"]), "Mileage": int(car_a["Mileage"]),
+        "Fuel Type": car_a["Fuel Type"], "Transmission": car_a["Transmission"],
+        "Condition": car_a["Condition"],
+    }
+    payload_b = {
+        "Brand": car_b["Brand"], "Model": car_b["Model"], "Year": int(car_b["Year"]),
+        "Engine Size": float(car_b["Engine Size"]), "Mileage": int(car_b["Mileage"]),
+        "Fuel Type": car_b["Fuel Type"], "Transmission": car_b["Transmission"],
+        "Condition": car_b["Condition"],
+    }
+
+    pa, ea, _ = _predict_all(payload_a, base_models, ensemble, scaler, encoder)
+    pb, eb, _ = _predict_all(payload_b, base_models, ensemble, scaler, encoder)
 
     cols = st.columns(2)
     _kpi(cols[0], "Car A — Ensemble", f"${ea:,.0f}",
-         f"{_pretty_brand(car_a['Brand'])} · {car_a['Year']} · {int(car_a['Mileage']):,} mi")
+         f"{_pretty_brand(payload_a['Brand'])} {payload_a['Model']} · {payload_a['Year']} · {int(payload_a['Mileage']):,} mi")
     _kpi(cols[1], "Car B — Ensemble", f"${eb:,.0f}",
-         f"{_pretty_brand(car_b['Brand'])} · {car_b['Year']} · {int(car_b['Mileage']):,} mi")
+         f"{_pretty_brand(payload_b['Brand'])} {payload_b['Model']} · {payload_b['Year']} · {int(payload_b['Mileage']):,} mi")
 
     diff = ea - eb
     if abs(diff) < 1:
@@ -916,7 +985,7 @@ def show_compare_page(base_models, ensemble, scaler, encoder, weights: dict | No
     else:
         which = "A" if diff > 0 else "B"
         st.markdown(
-            f"<span class='pill'>Car {which} prices ${abs(diff):,.0f} higher than the other</span>",
+            f"<span class='pill pill-green'>Car {which} prices ${abs(diff):,.0f} higher than the other</span>",
             unsafe_allow_html=True,
         )
 
@@ -1453,7 +1522,7 @@ def main() -> None:
     elif page == "Price Predictor":
         show_predictor_page(base_models, ensemble, scaler, encoder, weights, artifacts, df)
     elif page == "Compare Cars":
-        show_compare_page(base_models, ensemble, scaler, encoder, weights)
+        show_compare_page(base_models, ensemble, scaler, encoder, weights, df)
     elif page == "Batch Predict":
         show_batch_page(base_models, ensemble, scaler, encoder)
     elif page == "Data Analysis":
